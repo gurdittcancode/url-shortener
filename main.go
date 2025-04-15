@@ -85,6 +85,6 @@ func (urlMap *URLMap) handleEncodeRequest(w http.ResponseWriter, r *http.Request
 		ShortenedUrl string `json:"shortened_url"`
 	}{
 		Message:      "Ok",
-		ShortenedUrl: fmt.Sprintf("%s/go/%s", os.Getenv("APP_URL"), shortenedUrl),
+		ShortenedUrl: fmt.Sprintf("%s/g/%s", os.Getenv("APP_URL"), shortenedUrl),
 	})
 }
