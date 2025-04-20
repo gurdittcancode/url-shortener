@@ -7,6 +7,6 @@ RUN go mod download
 
 COPY *.go ./
 
-RUN go build -o url-shortener .
+RUN go build -o main .
 
-CMD [ "./url-shortener" ]
+CMD [ "./main" ]
