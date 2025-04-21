@@ -1,35 +1,45 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
-type URLMap struct {
-	urls  map[string]string
-	mutex sync.RWMutex
+var ctx = context.Background()
+
+type myRedis struct {
+	myRedis *redis.Client
 }
 
 func main() {
 	godotenv.Load(".env")
 
-	urlMap := &URLMap{
-		urls: make(map[string]string),
+	red := &myRedis{
+		myRedis: redis.NewClient(&redis.Options{
+			Addr:     os.Getenv("REDIS_URL"),
+			Password: "",
+			DB:       0,
+		}),
 	}
+
+	val := red.myRedis.Ping(ctx)
+	fmt.Println(val)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 
 	router.HandleFunc("/health", handleHealthCheck)
-	router.HandleFunc("POST /shorten", urlMap.handleEncodeRequest)
-	router.HandleFunc("GET /g/{shortUrl}", urlMap.redirectToOriginaUrl)
+	router.Post("/shorten", red.handleShortenRequest)
+	router.Get("/g/{shortUrl}", red.redirectToOriginalUrl)
 
 	fmt.Printf("Server running on PORT:%s\n", os.Getenv("PORT"))
 
@@ -45,7 +55,7 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (urlMap *URLMap) redirectToOriginaUrl(w http.ResponseWriter, r *http.Request) {
+func (red *myRedis) redirectToOriginalUrl(w http.ResponseWriter, r *http.Request) {
 	shortUrl := chi.URLParam(r, "shortUrl")
 	if shortUrl == "" {
 		w.WriteHeader(400)
@@ -53,15 +63,16 @@ func (urlMap *URLMap) redirectToOriginaUrl(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	originalUrl, ok := urlMap.urls[shortUrl]
-	if !ok {
+	originalUrl, err := red.myRedis.Get(ctx, shortUrl).Result()
+
+	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	http.Redirect(w, r, originalUrl, http.StatusFound)
 }
 
-func (urlMap *URLMap) handleEncodeRequest(w http.ResponseWriter, r *http.Request) {
+func (red *myRedis) handleShortenRequest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL string `json:"url"`
 	}
@@ -73,9 +84,11 @@ func (urlMap *URLMap) handleEncodeRequest(w http.ResponseWriter, r *http.Request
 
 	shortenedUrl := EncodeUrl(req.URL)
 
-	urlMap.mutex.Lock()
-	urlMap.urls[shortenedUrl] = req.URL
-	urlMap.mutex.Unlock()
+	err := red.myRedis.Set(ctx, shortenedUrl, req.URL, 20*time.Second).Err()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

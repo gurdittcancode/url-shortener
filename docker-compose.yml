@@ -1,0 +1,16 @@
+services:
+  url-shortener:
+    build: .
+    container_name: url_shortener
+    ports:
+      - "8008:8008"
+    depends_on:
+      - redis
+    environment:
+      - APP_URL=http://localhost:8008
+      - PORT=8008
+      - REDIS_URL=redis:6379
+
+  redis:
+    image: redis:alpine
+    container_name: url_redis
